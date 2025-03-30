@@ -20,6 +20,7 @@ import UserContext from './Components/context/userContext'
 import LeadStatus from './Components/ProjectAllocate/LeadStatus'
 import DeveloperProject from './Components/ProjectAllocate/DeveloperProject'
 import GetTask from './Components/ProjectAllocate/GetTask'
+import FeedbackGraph from './Components/Feedback/FeedbackGraph'
 export default function App() {
   const [data, setData] = useState('')
   return (
@@ -89,6 +90,12 @@ export default function App() {
               <Route path="/taskallocate" exact>
                 <Nav>
                   <TaskAllocate />
+                </Nav>
+              </Route>
+
+              <Route path="/developer-review" exact>
+                <Nav>
+                  <FeedbackGraph />
                 </Nav>
               </Route>
 

@@ -8,7 +8,7 @@ import {
   Event as EventIcon,
   LibraryAdd as LibraryAddIcon,
   People as PeopleIcon,
- 
+
   Search as SearchIcon,
 } from '@material-ui/icons'
 import ReportIcon from '@material-ui/icons/Report';
@@ -32,7 +32,7 @@ export const adminListItems = (
     </ListItem>
 
 
-  
+
     <ListItem
       button
       component={NavLink}
@@ -111,8 +111,8 @@ export const studentListItems = (
       </ListItemIcon>
       <ListItemText primary="Dashboard" />
     </ListItem>
-   
-  <ListItem
+
+    <ListItem
       button
       component={NavLink}
       to="/projectallocate"
@@ -126,7 +126,7 @@ export const studentListItems = (
       </ListItemIcon>
       <ListItemText primary="Project Allocation" />
     </ListItem>
-  <ListItem
+    <ListItem
       button
       component={NavLink}
       to="/projectstatus"
@@ -141,7 +141,7 @@ export const studentListItems = (
       <ListItemText primary="Project Status" />
     </ListItem>
 
-  
+
   </div>
 )
 
@@ -164,8 +164,8 @@ export const PLListItems = (
       <ListItemText primary="Dashboard" />
     </ListItem>
 
-   
-  
+
+
     <ListItem
       button
       component={NavLink}
@@ -225,7 +225,22 @@ export const PLListItems = (
       </ListItemIcon>
       <ListItemText primary="FeedBack" />
     </ListItem>
-  
+
+    <ListItem
+      button
+      component={NavLink}
+      to="/developer-review"
+      exact
+      activeStyle={{
+        backgroundColor: '#ecf0f1',
+      }}
+    >
+      <ListItemIcon>
+        <EventIcon />
+      </ListItemIcon>
+      <ListItemText primary="Developer Feedback" />
+    </ListItem>
+
   </div>
 )
 
@@ -247,8 +262,8 @@ export const PDListItems = (
       <ListItemText primary="Dashboard" />
     </ListItem>
 
-   
-  
+
+
     <ListItem
       button
       component={NavLink}
@@ -277,12 +292,12 @@ export const PDListItems = (
       </ListItemIcon>
       <ListItemText primary="Project Allocated" />
     </ListItem>
-  
+
   </div>
 )
 
 export const secondaryListItems = (
   <div>
-    
+
   </div>
 )
