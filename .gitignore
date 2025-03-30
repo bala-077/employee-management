@@ -1,0 +1,33 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build files
+dist/
+build/
+.cache/
+.vite/
+
+# Tailwind and CSS-related files
+*.css.map
+
+# Logs
+logs
+*.log
+yarn-error.log
+pnpm-debug.log
+debug.log
+
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Miscellaneous
+coverage/
+*.lock
+*.bak
