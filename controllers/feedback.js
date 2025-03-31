@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const Feedback = require('../models/feedback');
+const feedback = require('../models/feedback');
 
 // Submit feedback
 router.post('/submit', async (req, res) => {
@@ -336,5 +337,16 @@ router.get('/statistics', async (req, res) => {
     });
   }
 });
+
+router.get('/users/all-data', async (req, res) => {
+  try{
+  const data = await feedback.find();
+  res.status(200).json({data})
+  }
+  catch(err){
+    res.status(500).json({ message: `some internal issue ${err.message}`})
+  }
+  
+})
 
 module.exports = router;

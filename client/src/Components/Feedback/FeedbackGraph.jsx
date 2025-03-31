@@ -10,8 +10,15 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Button
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
 } from '@material-ui/core';
+import Rating from '@material-ui/lab/Rating';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -25,9 +32,8 @@ import {
   Legend,
   Filler
 } from 'chart.js';
-import { Bar, Radar, Line } from 'react-chartjs-2';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import PictureAsPdfIcon from '@material-ui/icons/PictureAsPdf';
 
 // Register ChartJS components
@@ -47,137 +53,241 @@ ChartJS.register(
 const FeedbackGraph = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [statistics, setStatistics] = useState(null);
-    const [users, setUsers] = useState([]);
-    const [selectedUser, setSelectedUser] = useState('all');
+    const [feedbackData, setFeedbackData] = useState([]);
+    const [projects, setProjects] = useState([]);
+    const [selectedProject, setSelectedProject] = useState('');
+    const [projectDevelopers, setProjectDevelopers] = useState([]);
 
-    const getUsers = async () => {
-        try {
-            const response = await axios.get('http://localhost:4000/api/users/all', {
-                headers: {
-                    Authorization: `Bearer ${localStorage.getItem("token")}`
-                }
-            });
-            setUsers(response.data);
-        } catch (err) {
-            console.error("Error fetching users:", err);
-        }
-    };
-
-    const getData = async () => {
+    // Fetch all feedback data
+    const getFeedbackData = async () => {
         try {
             setLoading(true);
-            const params = {
-                page: 1,
-                limit: 10,
-                sortBy: 'submittedAt',
-                sortOrder: 'desc'
-            };
-
-            if (selectedUser !== 'all') {
-                params.userId = selectedUser;
-            }
-
-            const response = await axios.get('http://localhost:4000/api/feedback/statistics', {
-                params,
+            const response = await axios.get('http://localhost:4000/api/feedback/users/all-data', {
                 headers: {
                     Authorization: `Bearer ${localStorage.getItem("token")}`
                 }
             });
-            setStatistics(response.data);
+            
+            if (response.data && response.data.data) {
+                setFeedbackData(response.data.data);
+                
+                // Extract unique projects from feedback data
+                const uniqueProjects = [...new Set(response.data.data.map(item => item.projectName))];
+                setProjects(uniqueProjects);
+                
+                if (uniqueProjects.length > 0) {
+                    setSelectedProject(uniqueProjects[0]);
+                }
+            } else {
+                setError("Invalid data format received from server");
+            }
             setError(null);
         } catch (err) {
-            console.error("Error fetching statistics:", err);
-            setError(err.response?.data?.message || "Failed to fetch feedback statistics");
+            console.error("Error fetching feedback data:", err);
+            setError(err.response?.data?.message || "Failed to fetch feedback data");
         } finally {
             setLoading(false);
         }
-    }
-
-    useEffect(() => {
-        getUsers();
-    }, []);
-
-    useEffect(() => {
-        getData();
-    }, [selectedUser]);
-
-    const handleUserChange = (event) => {
-        setSelectedUser(event.target.value);
     };
 
-    const generatePDF = () => {
-        if (!statistics || selectedUser === 'all') return;
+    useEffect(() => {
+        getFeedbackData();
+    }, []);
 
-        const selectedUserData = users.find(user => user._id === selectedUser);
-        if (!selectedUserData) return;
+    // Filter developers when project changes
+    useEffect(() => {
+        if (selectedProject && feedbackData.length > 0) {
+            // Get all feedback for the selected project
+            const projectFeedback = feedbackData.filter(feedback => 
+                feedback.projectName === selectedProject
+            );
+            
+            // Group feedback by developer
+            const developerMap = {};
+            projectFeedback.forEach(feedback => {
+                const userId = feedback.userId;
+                if (!developerMap[userId]) {
+                    developerMap[userId] = {
+                        userId: userId,
+                        userName: feedback.userName,
+                        reviews: [],
+                        latestReview: null,
+                        totalReviews: 0,
+                        averageRating: 0
+                    };
+                }
+                
+                // Add review
+                developerMap[userId].reviews.push(feedback);
+                developerMap[userId].totalReviews++;
+                
+                // Update latest review
+                const reviewDate = new Date(feedback.submittedAt);
+                if (!developerMap[userId].latestReview || 
+                    reviewDate > new Date(developerMap[userId].latestReview)) {
+                    developerMap[userId].latestReview = feedback.submittedAt;
+                }
+                
+                // Calculate average rating across all skills
+                const skillsAvg = feedback.skills.reduce((sum, skill) => sum + skill.rating, 0) / feedback.skills.length;
+                developerMap[userId].averageRating = 
+                    ((developerMap[userId].averageRating * (developerMap[userId].totalReviews - 1)) + skillsAvg) / 
+                    developerMap[userId].totalReviews;
+            });
+            
+            // Convert to array and sort by username
+            const developers = Object.values(developerMap).sort((a, b) => 
+                a.userName.localeCompare(b.userName)
+            );
+            
+            setProjectDevelopers(developers);
+        } else {
+            setProjectDevelopers([]);
+        }
+    }, [selectedProject, feedbackData]);
 
-        const doc = new jsPDF();
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
+    const handleProjectChange = (event) => {
+        setSelectedProject(event.target.value);
+    };
 
-        // Title
-        doc.setFontSize(20);
-        doc.text('Developer Performance Report', pageWidth / 2, 20, { align: 'center' });
-        doc.setFontSize(12);
-        doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth / 2, 30, { align: 'center' });
+    const getRatingDescription = (rating) => {
+        switch (Math.round(rating)) {
+            case 1: return 'Poor';
+            case 2: return 'Average';
+            case 3: return 'Normal';
+            case 4: return 'Good';
+            case 5: return 'Excellent';
+            default: return 'Not Rated';
+        }
+    };
 
-        // Developer Information
-        doc.setFontSize(14);
-        doc.text('Developer Information', 20, 45);
-        doc.setFontSize(12);
-        doc.text(`Name: ${selectedUserData.name}`, 20, 55);
-        doc.text(`Total Feedbacks: ${statistics.totalFeedbacks}`, 20, 65);
-
-        // Skill Performance Table
-        const skillData = statistics.feedbacks.flatMap(f => f.skills);
-        const skillSummary = {};
-        skillData.forEach(skill => {
-            if (!skillSummary[skill.name]) {
-                skillSummary[skill.name] = {
-                    total: 0,
-                    count: 0,
-                    average: 0
-                };
+    const generatePDF = (developer) => {
+        try {
+            console.log('Starting PDF generation for developer:', developer.userName);
+            
+            if (!selectedProject) {
+                alert('Please select a project first');
+                return;
             }
-            skillSummary[skill.name].total += skill.rating;
-            skillSummary[skill.name].count++;
-            skillSummary[skill.name].average = skillSummary[skill.name].total / skillSummary[skill.name].count;
-        });
 
-        const tableData = Object.entries(skillSummary).map(([skill, data]) => [
-            skill,
-            data.average.toFixed(2),
-            data.count.toString()
-        ]);
+            if (!developer || developer.reviews.length === 0) {
+                alert('No feedback data found for this developer');
+                return;
+            }
 
-        doc.autoTable({
-            startY: 75,
-            head: [['Skill', 'Average Rating', 'Number of Reviews']],
-            body: tableData,
-            theme: 'grid',
-            headStyles: { fillColor: [41, 128, 185] },
-            styles: { fontSize: 10 }
-        });
+            // Create a new PDF document with explicit settings
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+            
+            const pageWidth = doc.internal.pageSize.getWidth();
+            console.log('PDF document created, page width:', pageWidth);
 
-        // Project Performance
-        const projectData = statistics.feedbacks.map(f => ({
-            project: f.projectName,
-            rating: f.averageRating,
-            date: new Date(f.submittedAt).toLocaleDateString()
-        }));
+            try {
+                // Title
+                doc.setFontSize(20);
+                doc.text('Developer Performance Report', pageWidth / 2, 20, { align: 'center' });
+                doc.setFontSize(12);
+                doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth / 2, 30, { align: 'center' });
+                console.log('Added title to PDF');
 
-        doc.autoTable({
-            startY: doc.lastAutoTable.finalY + 10,
-            head: [['Project', 'Average Rating', 'Review Date']],
-            body: projectData.map(p => [p.project, p.rating.toFixed(2), p.date]),
-            theme: 'grid',
-            headStyles: { fillColor: [41, 128, 185] },
-            styles: { fontSize: 10 }
-        });
+                // Project and Developer Information
+                doc.setFontSize(14);
+                doc.text('Project Information', 20, 45);
+                doc.setFontSize(12);
+                doc.text(`Project Name: ${selectedProject}`, 20, 55);
+                
+                doc.setFontSize(14);
+                doc.text('Developer Information', 20, 75);
+                doc.setFontSize(12);
+                doc.text(`Developer Name: ${developer.userName}`, 20, 85);
+                doc.text(`Total Reviews: ${developer.totalReviews}`, 20, 95);
+                doc.text(`Average Rating: ${developer.averageRating.toFixed(1)} (${getRatingDescription(developer.averageRating)})`, 20, 105);
+                console.log('Added developer information to PDF');
 
-        // Save the PDF
-        doc.save(`${selectedUserData.name}_performance_report.pdf`);
+                // Skills Table
+                const latestReview = developer.reviews.reduce((latest, review) => 
+                    new Date(review.submittedAt) > new Date(latest.submittedAt) ? review : latest
+                , developer.reviews[0]);
+                
+                console.log('Latest review:', latestReview);
+                
+                let skillsTableEnd = 145;
+                
+                // Check if skills array exists and has items
+                if (latestReview.skills && latestReview.skills.length > 0) {
+                    const skillsData = latestReview.skills.map(skill => [
+                        skill.skillName,
+                        skill.rating,
+                        getRatingDescription(skill.rating)
+                    ]);
+
+                    doc.setFontSize(14);
+                    doc.text('Skills Assessment', 20, 125);
+                    
+                    // Use the imported autoTable instead of doc.autoTable
+                    autoTable(doc, {
+                        startY: 135,
+                        head: [['Skill', 'Rating', 'Performance Level']],
+                        body: skillsData,
+                        theme: 'grid',
+                        headStyles: { fillColor: [41, 128, 185] },
+                        styles: { fontSize: 10 }
+                    });
+                    console.log('Added skills table to PDF');
+                    
+                    // Get the end position of the skills table
+                    skillsTableEnd = doc.lastAutoTable.finalY + 20;
+                } else {
+                    doc.setFontSize(14);
+                    doc.text('Skills Assessment', 20, 125);
+                    doc.setFontSize(12);
+                    doc.text('No skills data available', 20, 135);
+                    console.log('No skills data available');
+                }
+
+                // Review History Table
+                const reviewData = developer.reviews.map(review => [
+                    new Date(review.submittedAt).toLocaleDateString(),
+                    review.overallReview || 'No review provided',
+                    review.reviewedBy || 'Unknown Reviewer'
+                ]);
+                
+                doc.setFontSize(14);
+                doc.text('Review History', 20, skillsTableEnd);
+                
+                // Use the imported autoTable for the review history table
+                autoTable(doc, {
+                    startY: skillsTableEnd + 10,
+                    head: [['Review Date', 'Overall Review', 'Reviewed By']],
+                    body: reviewData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [41, 128, 185] },
+                    styles: { fontSize: 10 }
+                });
+                console.log('Added review history table to PDF');
+
+                // Save the PDF with a safe filename (remove special characters)
+                const safeUserName = developer.userName.replace(/[^a-z0-9]/gi, '_');
+                const safeProjectName = selectedProject.replace(/[^a-z0-9]/gi, '_');
+                const fileName = `${safeUserName}_${safeProjectName}_report.pdf`;
+                
+                console.log('Saving PDF with filename:', fileName);
+                
+                // Use simple save method to avoid compatibility issues
+                doc.save(fileName);
+                console.log('PDF saved successfully');
+                
+            } catch (contentError) {
+                console.error('Error while adding content to PDF:', contentError);
+                alert('Error generating PDF content: ' + contentError.message);
+            }
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            alert('Error generating PDF report. Error details: ' + error.message);
+        }
     };
 
     if (loading) {
@@ -207,7 +317,7 @@ const FeedbackGraph = () => {
         );
     }
 
-    if (!statistics || statistics.feedbacks.length === 0) {
+    if (feedbackData.length === 0) {
         return (
             <Box p={3}>
                 <Paper 
@@ -226,168 +336,93 @@ const FeedbackGraph = () => {
         );
     }
 
-    // Prepare data for charts
-    const feedbacks = statistics.feedbacks;
-    const skillNames = [...new Set(feedbacks.flatMap(f => f.skills.map(s => s.name)))];
-    
-    // Calculate skill averages
-    const skillAverages = skillNames.map(skillName => {
-        const skillRatings = feedbacks.flatMap(f => 
-            f.skills.filter(s => s.name === skillName).map(s => s.rating)
-        );
-        return skillRatings.reduce((acc, val) => acc + val, 0) / skillRatings.length;
-    });
-
-    // Calculate user averages
-    const userNames = [...new Set(feedbacks.map(f => f.userName))];
-    const userAverages = userNames.map(userName => {
-        const userFeedbacks = feedbacks.filter(f => f.userName === userName);
-        return userFeedbacks.reduce((acc, f) => acc + f.averageRating, 0) / userFeedbacks.length;
-    });
-
-    // Calculate project averages
-    const projectNames = [...new Set(feedbacks.map(f => f.projectName))];
-    const projectAverages = projectNames.map(projectName => {
-        const projectFeedbacks = feedbacks.filter(f => f.projectName === projectName);
-        return projectFeedbacks.reduce((acc, f) => acc + f.averageRating, 0) / projectFeedbacks.length;
-    });
-
-    const baseOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            y: {
-                beginAtZero: true,
-                max: 5,
-                ticks: {
-                    stepSize: 1
-                }
-            }
-        },
-        plugins: {
-            legend: {
-                position: 'top',
-            },
-            tooltip: {
-                mode: 'index',
-                intersect: false,
-            }
-        }
-    };
-
-    const radarChartData = {
-        labels: skillNames,
-        datasets: [
-            {
-                label: 'Overall Skill Performance',
-                data: skillAverages,
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                borderColor: 'rgb(75, 192, 192)',
-                borderWidth: 2,
-                pointBackgroundColor: 'rgb(75, 192, 192)',
-                pointBorderColor: '#fff',
-                pointHoverBackgroundColor: '#fff',
-                pointHoverBorderColor: 'rgb(75, 192, 192)',
-            }
-        ]
-    };
-
-    const userBarChartData = {
-        labels: userNames,
-        datasets: [
-            {
-                label: 'Average Rating',
-                data: userAverages,
-                backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                borderColor: 'rgb(54, 162, 235)',
-                borderWidth: 1,
-            }
-        ]
-    };
-
-    const projectLineChartData = {
-        labels: projectNames,
-        datasets: [
-            {
-                label: 'Project Performance',
-                data: projectAverages,
-                fill: false,
-                borderColor: 'rgb(255, 99, 132)',
-                tension: 0.1,
-                pointRadius: 4,
-                pointHoverRadius: 6,
-            }
-        ]
-    };
-
     return (
         <Box p={3}>
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
                 <Typography variant="h5">
-                    Feedback Analysis
+                    Project Feedback Analysis
                 </Typography>
                 <Box display="flex" alignItems="center" gap={2}>
                     <FormControl style={{ minWidth: 200 }}>
-                        <InputLabel>Select User</InputLabel>
+                        <InputLabel>Select Project</InputLabel>
                         <Select
-                            value={selectedUser}
-                            onChange={handleUserChange}
-                            label="Select User"
+                            value={selectedProject}
+                            onChange={handleProjectChange}
+                            label="Select Project"
                         >
-                            <MenuItem value="all">All Users</MenuItem>
-                            {users.map((user) => (
-                                <MenuItem key={user._id} value={user._id}>
-                                    {user.name}
+                            {projects.map((project) => (
+                                <MenuItem key={project} value={project}>
+                                    {project}
                                 </MenuItem>
                             ))}
                         </Select>
                     </FormControl>
-                    {selectedUser !== 'all' && (
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            startIcon={<PictureAsPdfIcon />}
-                            onClick={generatePDF}
-                        >
-                            Download Report
-                        </Button>
-                    )}
                 </Box>
             </Box>
-            <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                    <Paper elevation={3} style={{ padding: 16, height: 400 }}>
-                        <Typography variant="h6" gutterBottom>
-                            Skill Distribution
-                        </Typography>
-                        <Radar data={radarChartData} options={baseOptions} />
-                    </Paper>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                    <Paper elevation={3} style={{ padding: 16, height: 400 }}>
-                        <Typography variant="h6" gutterBottom>
-                            User Performance
-                        </Typography>
-                        <Bar data={userBarChartData} options={baseOptions} />
-                    </Paper>
-                </Grid>
-                <Grid item xs={12}>
-                    <Paper elevation={3} style={{ padding: 16, height: 400 }}>
-                        <Typography variant="h6" gutterBottom>
-                            Project Performance
-                        </Typography>
-                        <Line data={projectLineChartData} options={baseOptions} />
-                    </Paper>
-                </Grid>
-            </Grid>
-            <Box mt={3}>
-                <Typography variant="body1" color="textSecondary">
-                    Total Feedbacks: {statistics.totalFeedbacks} | 
-                    Current Page: {statistics.currentPage} of {statistics.totalPages}
+            
+            <Paper elevation={3} style={{ padding: 16 }}>
+                <Typography variant="h6" gutterBottom>
+                    {selectedProject ? `${selectedProject} - Developer Reviews` : 'Select a project to view developers'}
                 </Typography>
-            </Box>
+                
+                {projectDevelopers.length > 0 ? (
+                    <TableContainer>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Developer Name</TableCell>
+                                    <TableCell align="center">Total Reviews</TableCell>
+                                    <TableCell align="center">Average Rating</TableCell>
+                                    <TableCell align="center">Performance Level</TableCell>
+                                    <TableCell align="center">Latest Review</TableCell>
+                                    <TableCell align="center">Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {projectDevelopers.map((developer) => (
+                                    <TableRow key={developer.userId}>
+                                        <TableCell>{developer.userName}</TableCell>
+                                        <TableCell align="center">{developer.totalReviews}</TableCell>
+                                        <TableCell align="center">
+                                            <Box display="flex" justifyContent="center">
+                                                <Rating 
+                                                    value={developer.averageRating} 
+                                                    precision={0.5} 
+                                                    readOnly 
+                                                    size="small"
+                                                />
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell align="center">
+                                            {getRatingDescription(developer.averageRating)}
+                                        </TableCell>
+                                        <TableCell align="center">
+                                            {new Date(developer.latestReview).toLocaleDateString()}
+                                        </TableCell>
+                                        <TableCell align="center">
+                                            <Button
+                                                variant="contained"
+                                                color="primary"
+                                                size="small"
+                                                startIcon={<PictureAsPdfIcon />}
+                                                onClick={() => generatePDF(developer)}
+                                            >
+                                                Download
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                ) : (
+                    <Typography color="textSecondary" align="center" style={{ padding: 20 }}>
+                        No developers found for this project
+                    </Typography>
+                )}
+            </Paper>
         </Box>
     );
-}
+};
 
 export default FeedbackGraph;
